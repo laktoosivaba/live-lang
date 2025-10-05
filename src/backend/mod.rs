@@ -1,3 +1,4 @@
-pub mod spir_v;
+pub mod spirv_visitor;
+pub mod spirv_glsl;
 
-use self::spir_v::*;
+use self::spirv_visitor::*;
