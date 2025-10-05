@@ -1,3 +1,5 @@
 /target
 .idea
 .DS_Store
+examples/glsl/fragment.frag
+examples/spv/fragment.spv

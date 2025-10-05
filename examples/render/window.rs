@@ -38,8 +38,8 @@ impl State {
         let vertex_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("vertex"),
             source: wgpu::ShaderSource::Glsl {
-                // shader: std::borrow::Cow::Borrowed(include_str!("glsl/vertex.vert")),
-                shader: std::borrow::Cow::Borrowed(include_str!("glsl/vertex.vert")),
+                // shader: std::borrow::Cow::Borrowed(include_str!("glsl/triangle.vert")),
+                shader: std::borrow::Cow::Borrowed(include_str!("../glsl/triangle.vert")),
                 stage: wgpu::naga::ShaderStage::Vertex,
                 defines: &[],
             },
@@ -51,7 +51,7 @@ impl State {
             label: Some("fragment"),
             source: wgpu::ShaderSource::Glsl {
                 // shader: std::borrow::Cow::Borrowed(include_str!("glsl/pink.frag")),
-                shader: std::borrow::Cow::Borrowed(include_str!("glsl/fragment.frag")),
+                shader: std::borrow::Cow::Borrowed(include_str!("../glsl/fragment.frag")),
                 stage: wgpu::naga::ShaderStage::Fragment,
                 defines: &[],
             },
@@ -216,7 +216,7 @@ impl ApplicationHandler for App {
     }
 }
 
-fn main() {
+pub fn render_window() {
     // wgpu uses `log` for all of our logging, so we initialize a logger with the `env_logger` crate.
     //
     // To change the log level, set the `RUST_LOG` environment variable. See the `env_logger`
