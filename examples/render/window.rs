@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use winit::{
     application::ApplicationHandler,
@@ -15,6 +16,11 @@ struct State {
     surface: wgpu::Surface<'static>,
     surface_format: wgpu::TextureFormat,
     render_pipeline: wgpu::RenderPipeline,
+    // Uniform resources
+    time_buffer: wgpu::Buffer,
+    resolution_buffer: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
+    start_instant: Instant,
 }
 
 impl State {
@@ -57,9 +63,69 @@ impl State {
             },
         });
 
+        // Create uniform buffers for time (binding=0) and resolution (binding=1)
+        // Allocate 16 bytes for each to satisfy common alignment constraints.
+        let time_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("time uniform buffer"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let resolution_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("resolution uniform buffer"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Initialize resolution contents
+        let initial_resolution: [f32; 4] = [size.width as f32, size.height as f32, 0.0, 0.0];
+        queue.write_buffer(&resolution_buffer, 0, bytemuck::cast_slice(&initial_resolution));
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("globals bind group layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("globals bind group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: time_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: resolution_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline layout"),
-            bind_group_layouts: &[],
+            bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -100,6 +166,10 @@ impl State {
             surface,
             surface_format,
             render_pipeline,
+            time_buffer,
+            resolution_buffer,
+            bind_group,
+            start_instant: Instant::now(),
         };
 
         // Configure surface for the first time
@@ -132,6 +202,11 @@ impl State {
 
         // reconfigure the surface
         self.configure_surface();
+
+        // Update resolution uniform
+        let new_resolution: [f32; 4] = [self.size.width as f32, self.size.height as f32, 0.0, 0.0];
+        self.queue
+            .write_buffer(&self.resolution_buffer, 0, bytemuck::cast_slice(&new_resolution));
     }
 
     fn render(&mut self) {
@@ -146,6 +221,12 @@ impl State {
                 format: Some(self.surface_format.add_srgb_suffix()),
                 ..Default::default()
             });
+
+        // Update time uniform (seconds since start)
+        let elapsed = self.start_instant.elapsed().as_secs_f32();
+        let time_data: [f32; 4] = [elapsed, 0.0, 0.0, 0.0];
+        self.queue
+            .write_buffer(&self.time_buffer, 0, bytemuck::cast_slice(&time_data));
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
@@ -165,6 +246,7 @@ impl State {
             });
 
             renderpass.set_pipeline(&self.render_pipeline);
+            renderpass.set_bind_group(0, &self.bind_group, &[]);
             renderpass.draw(0..3, 0..1);
         }
 

@@ -16,6 +16,7 @@ pub struct SpirvContext {
 pub struct TypeCache {
     pub void_ty: Word,
     pub f32_ty: Word,
+    pub bool_ty: Word,
     pub vec2_ty: Word,
     pub vec4_ty: Word,
 }
@@ -36,6 +37,7 @@ impl SpirvContext {
         // Define types
         let void_ty = b.type_void();
         let f32_ty = b.type_float(32);
+        let bool_ty = b.type_bool();
         let vec2_ty = b.type_vector(f32_ty, 2);
         let vec4_ty = b.type_vector(f32_ty, 4);
 
@@ -70,6 +72,7 @@ impl SpirvContext {
             types: TypeCache {
                 void_ty,
                 f32_ty,
+                bool_ty,
                 vec2_ty,
                 vec4_ty,
             },
@@ -115,4 +118,3 @@ impl SpirvContext {
         self.builder.f_div(self.types.vec2_ty, None, xy, resolution_val).unwrap()
     }
 }
-

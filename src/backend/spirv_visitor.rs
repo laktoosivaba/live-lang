@@ -130,16 +130,76 @@ impl SpirvEmitter {
             "noise" => self.context.emit_noise(call),
             "solid" => self.context.emit_solid(call),
             "gradient" => self.context.emit_gradient(call),
+            "shape" => self.context.emit_shape(call),
+            "voronoi" => self.context.emit_voronoi(call),
+            "src" => {
+                // src(index=0)
+                let idx_word = self.context.get_arg_or_default(call, 0, 0.0);
+                // Extract constant if possible (best effort)
+                let mut idx: u32 = 0;
+                if let Some(arg) = call.args.get(0) { if let Expr::Lit(Lit::Num(n)) = &*arg.expr { idx = n.value as u32; } }
+                let key = format!("o{}", idx);
+                if let Some(val) = self.context.variables.get(&key) { Some(*val) } else { self.context.emit_solid(call) }
+            }
             _ => None,
         }
     }
 
     fn emit_chained_function(&mut self, name: &str, input: Word, call: &CallExpr) -> Option<Word> {
         match name {
+            // Output function: store to indexed buffer then pass through
+            "out" => {
+                let mut idx: u32 = 0;
+                if let Some(arg) = call.args.get(0) { if let Expr::Lit(Lit::Num(n)) = &*arg.expr { idx = n.value as u32; } }
+                let key = format!("o{}", idx);
+                self.context.variables.insert(key, input);
+                Some(input)
+            }
+            // Unary effects
             "rotate" => self.context.emit_rotate(input, call),
             "scale" => self.context.emit_scale(input, call),
             "invert" => self.context.emit_invert(input, call),
             "color" => self.context.emit_color(input, call),
+            "brightness" => self.context.emit_brightness(input, call),
+            "contrast" => self.context.emit_contrast(input, call),
+            "saturate" => self.context.emit_saturate(input, call),
+            "posterize" => self.context.emit_posterize(input, call),
+            "thresh" => self.context.emit_thresh(input, call),
+            "hue" => self.context.emit_hue(input, call),
+            "colorama" => self.context.emit_colorama(input, call),
+            "luma" => self.context.emit_luma_effect(input, call),
+            "shift" => self.context.emit_shift(input, call),
+            "scrollX" => self.context.emit_scrollX(input, call),
+            "scrollY" => self.context.emit_scrollY(input, call),
+            "scroll" => self.context.emit_scroll(input, call),
+            "repeat" => self.context.emit_repeat(input, call),
+            "repeatX" => self.context.emit_repeatX(input, call),
+            "repeatY" => self.context.emit_repeatY(input, call),
+            "kaleid" => self.context.emit_kaleid(input, call),
+            "pixelate" => self.context.emit_pixelate(input, call),
+            // Binary operations expecting another source as first arg in call arguments
+            "add" | "sub" | "mult" | "blend" | "diff" | "layer" | "mask" | "modulate" | "modulateScale" | "modulateRotate" | "modulateRepeat" | "modulatePixelate" | "modulateHue" | "modulateKaleid" => {
+                if let Some(first_arg) = call.args.get(0) {
+                    if let Expr::Call(inner_call) = &*first_arg.expr {
+                        if let Some(other) = self.emit_call(inner_call) {
+                            let amount = self.context.get_arg_or_default(call, 1, 1.0);
+                            return Some(match name {
+                                "add" => self.context.binary_add(input, other, amount),
+                                "sub" => self.context.binary_sub(input, other, amount),
+                                "mult" => self.context.binary_mult(input, other, amount),
+                                "blend" => self.context.binary_blend(input, other, amount),
+                                "diff" => self.context.binary_diff(input, other),
+                                "layer" => self.context.binary_layer(input, other),
+                                "mask" => self.context.binary_mask(input, other),
+                                "modulate" | "modulateScale" | "modulateRotate" | "modulateRepeat" | "modulatePixelate" | "modulateKaleid" => self.context.binary_modulate(input, other, amount),
+                                "modulateHue" => self.context.emit_modulateHue(input, other, amount),
+                                _ => input,
+                            });
+                        }
+                    }
+                }
+                Some(input)
+            }
             _ => Some(input), // Unknown function, pass through
         }
     }

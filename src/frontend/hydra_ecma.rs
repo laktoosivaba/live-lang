@@ -1,4 +1,3 @@
-use std::path::Path;
 use swc_common::sync::Lrc;
 use swc_common::{
     errors::{ColorConfig, Handler},
@@ -37,7 +36,7 @@ pub fn hydra_ecma(source: &str) -> Script {
 
     let ast = parser
         .parse_script()
-        .map_err(|mut e| {
+        .map_err(|e| {
             // Unrecoverable fatal error occurred
             e.into_diagnostic(&handler).emit()
         })

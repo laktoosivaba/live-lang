@@ -69,9 +69,39 @@ impl SpirvContext {
         Some(self.construct_vec4(gray, gray, gray, one))
     }
 
+    pub fn emit_shape(&mut self, call: &CallExpr) -> Option<Word> {
+        // shape(sides=3, radius=0.5, smoothing=0.01)
+        let _sides = self.get_arg_or_default(call, 0, 3.0);
+        let radius = self.get_arg_or_default(call, 1, 0.5);
+        let smoothing = self.get_arg_or_default(call, 2, 0.01);
+        let st = *self.variables.get("_st")?; // vec2
+        let half = self.emit_f32_constant(0.5);
+        let (x, y) = self.extract_vec2_components(st);
+        let x_centered = self.builder.f_sub(self.types.f32_ty, None, x, half).unwrap();
+        let y_centered = self.builder.f_sub(self.types.f32_ty, None, y, half).unwrap();
+        let centered = self.emit_vec2(x_centered, y_centered);
+        let dist = self.emit_length2(centered);
+        let radius_minus = self.builder.f_sub(self.types.f32_ty, None, radius, smoothing).unwrap();
+        let mask = self.smoothstep(radius, radius_minus, dist);
+        let alpha = self.emit_f32_constant(1.0);
+        Some(self.construct_vec4(mask, mask, mask, alpha))
+    }
+
+    pub fn emit_voronoi(&mut self, _call: &CallExpr) -> Option<Word> {
+        // Placeholder implementation: just gradient noise placeholder
+        let st = *self.variables.get("_st")?;
+        let x = self.extract_component(st, 0);
+        let y = self.extract_component(st, 1);
+        let avg = self.builder.f_add(self.types.f32_ty, None, x, y).unwrap();
+        let half = self.emit_f32_constant(0.5);
+        let val = self.builder.f_mul(self.types.f32_ty, None, avg, half).unwrap();
+        let alpha = self.emit_f32_constant(1.0);
+        Some(self.construct_vec4(val, val, val, alpha))
+    }
+
     pub fn get_arg_or_default(&mut self, call: &CallExpr, index: usize, default: f32) -> Word {
         use swc_ecma_ast::{Expr, Lit};
-        
+
         call.args.get(index)
             .and_then(|arg| {
                 if let Expr::Lit(Lit::Num(n)) = &*arg.expr {
@@ -83,4 +113,3 @@ impl SpirvContext {
             .unwrap_or_else(|| self.emit_f32_constant(default))
     }
 }
-

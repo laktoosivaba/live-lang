@@ -13,6 +13,7 @@ swc_ecma_ast = "15.0.0"
 swc_ecma_parser = "24.0.3"
 rspirv = "0.12.0+sdk-1.3.268.0"
 spirv-cross2 = "0.4.6"
+bytemuck = { version = "1.15", features = ["derive"] }
 
 [dev-dependencies]
 winit = "0.30"

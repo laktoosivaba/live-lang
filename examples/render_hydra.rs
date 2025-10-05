@@ -21,7 +21,7 @@ fn main() {
     println!("Step 1: Building AST from color.js...");
 
     // Read the hydra.js file
-    let source = fs::read_to_string("examples/hydra/color.js")
+    let source = fs::read_to_string("examples/hydra/sources.js")
         .expect("Failed to read hydra.js");
 
     let ast = hydra_ecma(&source);
