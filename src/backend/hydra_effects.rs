@@ -187,17 +187,13 @@ impl SpirvContext {
     pub fn emit_posterize(&mut self, color: Word, call: &CallExpr) -> Option<Word> {
         let levels = self.get_arg_or_default(call, 0, 4.0);
         let gamma = self.get_arg_or_default(call, 1, 0.6);
-        let _inv_gamma = {
-            let one = self.emit_f32_constant(1.0);
-            self.builder.f_div(self.types.f32_ty, None, one, gamma).unwrap()
-        };
-        let pow = |ctx: &mut SpirvContext, ch: Word| {
-            ctx.emit_quantize(ch, levels)
-        };
-        let qcolor = self.apply_rgb(color, pow);
-        Some(self.apply_rgb(qcolor, |_ctx, ch| {
-            ch
-        }))
+        let one = self.emit_f32_constant(1.0);
+        let inv_gamma = self.builder.f_div(self.types.f32_ty, None, one, gamma).unwrap();
+        // safe pow -> quantize -> safe pow
+        let linearized = self.apply_rgb(color, |ctx, ch| ctx.safe_pow(ch, inv_gamma));
+        let quantized = self.apply_rgb(linearized, |ctx, ch| ctx.emit_quantize(ch, levels));
+        let restored = self.apply_rgb(quantized, |ctx, ch| ctx.safe_pow(ch, gamma));
+        Some(restored)
     }
 
     pub fn emit_thresh(&mut self, color: Word, call: &CallExpr) -> Option<Word> {
@@ -239,7 +235,7 @@ impl SpirvContext {
         Some(vec)
     }
 
-    pub fn emit_scrollX(&mut self, color: Word, call: &CallExpr) -> Option<Word> {
+    pub fn emit_scroll_x(&mut self, color: Word, call: &CallExpr) -> Option<Word> {
         let x = self.get_arg_or_default(call, 0, 0.0);
         let speed = self.get_arg_or_default(call, 1, 0.0);
         let time = self.load_time();
@@ -249,8 +245,8 @@ impl SpirvContext {
         let factor = self.builder.f_add(self.types.f32_ty, None, one, delta).unwrap();
         Some(self.brightness_amount(color, factor))
     }
-    pub fn emit_scrollY(&mut self, color: Word, call: &CallExpr) -> Option<Word> { self.emit_scrollX(color, call) }
-    pub fn emit_scroll(&mut self, color: Word, call: &CallExpr) -> Option<Word> { self.emit_scrollX(color, call) }
+    pub fn emit_scroll_y(&mut self, color: Word, call: &CallExpr) -> Option<Word> { self.emit_scroll_x(color, call) }
+    pub fn emit_scroll(&mut self, color: Word, call: &CallExpr) -> Option<Word> { self.emit_scroll_x(color, call) }
 
     pub fn emit_repeat(&mut self, color: Word, call: &CallExpr) -> Option<Word> {
         let rx = self.get_arg_or_default(call, 0, 3.0);
@@ -260,8 +256,8 @@ impl SpirvContext {
         let avg = self.builder.f_mul(self.types.f32_ty, None, sum, half).unwrap();
         Some(self.contrast_amount(color, avg))
     }
-    pub fn emit_repeatX(&mut self, color: Word, call: &CallExpr) -> Option<Word> { self.emit_repeat(color, call) }
-    pub fn emit_repeatY(&mut self, color: Word, call: &CallExpr) -> Option<Word> { self.emit_repeat(color, call) }
+    pub fn emit_repeat_x(&mut self, color: Word, call: &CallExpr) -> Option<Word> { self.emit_repeat(color, call) }
+    pub fn emit_repeat_y(&mut self, color: Word, call: &CallExpr) -> Option<Word> { self.emit_repeat(color, call) }
 
     pub fn emit_kaleid(&mut self, color: Word, call: &CallExpr) -> Option<Word> {
         let sides = self.get_arg_or_default(call, 0, 4.0);
@@ -281,19 +277,18 @@ impl SpirvContext {
 
     // Modulate variants (placeholders applying brightness based on luma(other))
     pub fn emit_modulate(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
-    pub fn emit_modulateScale(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
-    pub fn emit_modulateRotate(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
-    pub fn emit_modulateRepeat(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
-    pub fn emit_modulatePixelate(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
-    pub fn emit_modulateHue(&mut self, base: Word, other: Word, amount: Word) -> Word {
-        // Hue shift by luma(other)*amount
+    pub fn emit_modulate_scale(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
+    pub fn emit_modulate_rotate(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
+    pub fn emit_modulate_repeat(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
+    pub fn emit_modulate_pixelate(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
+    pub fn emit_modulate_hue(&mut self, base: Word, other: Word, amount: Word) -> Word {
         let l = self.emit_luma(other);
         let angle = self.builder.f_mul(self.types.f32_ty, None, l, amount).unwrap();
         self.hue_rotate(base, angle)
     }
-    pub fn emit_modulateKaleid(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
-    pub fn emit_modulateScrollX(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
-    pub fn emit_modulateScrollY(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
+    pub fn emit_modulate_kaleid(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
+    pub fn emit_modulate_scroll_x(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
+    pub fn emit_modulate_scroll_y(&mut self, base: Word, other: Word, amount: Word) -> Word { self.binary_modulate(base, other, amount) }
 
     // Binary operations
     pub fn binary_add(&mut self, a: Word, b: Word, amount: Word) -> Word { self.binary_mix(a, b, amount, |ctx, x, y| ctx.builder.f_add(ctx.types.f32_ty, None, x, y).unwrap()) }
@@ -309,14 +304,16 @@ impl SpirvContext {
     pub fn binary_layer(&mut self, a: Word, b: Word) -> Word { let ba = self.extract_component(b, 3); self.binary_mix(a, b, ba, |_ctx, _x, y| y) }
     pub fn binary_mask(&mut self, a: Word, b: Word) -> Word { // multiply by mask luminance
         let mask = self.emit_luma(b);
-        let r = self.extract_component(a, 0);
-        let g = self.extract_component(a, 1);
-        let bch = self.extract_component(a, 2);
-        let aalpha = self.extract_component(a, 3);
-        let r2 = self.builder.f_mul(self.types.f32_ty, None, r, mask).unwrap();
-        let g2 = self.builder.f_mul(self.types.f32_ty, None, g, mask).unwrap();
-        let b2 = self.builder.f_mul(self.types.f32_ty, None, bch, mask).unwrap();
-        self.construct_vec4(r2, g2, b2, aalpha)
+        let ar = self.extract_component(a, 0);
+        let ag = self.extract_component(a, 1);
+        let ab = self.extract_component(a, 2);
+        let aa = self.extract_component(a, 3);
+        let r2 = self.builder.f_mul(self.types.f32_ty, None, ar, mask).unwrap();
+        let g2 = self.builder.f_mul(self.types.f32_ty, None, ag, mask).unwrap();
+        let b2 = self.builder.f_mul(self.types.f32_ty, None, ab, mask).unwrap();
+        // also attenuate alpha by mask value for proper masking
+        let a2 = self.builder.f_mul(self.types.f32_ty, None, aa, mask).unwrap();
+        self.construct_vec4(r2, g2, b2, a2)
     }
     pub fn binary_modulate(&mut self, a: Word, b: Word, amount: Word) -> Word {
         // a * (1 + luma(b)*amount)

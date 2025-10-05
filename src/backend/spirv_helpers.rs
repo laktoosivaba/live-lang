@@ -77,13 +77,24 @@ impl SpirvContext {
     }
 
     pub fn load_time(&mut self) -> Word {
-        self.builder.load(
-            self.types.f32_ty,
-            None,
-            self.builtins.time_uniform,
-            None,
-            vec![],
-        ).unwrap()
+        // Globals struct: member 0 is vec4 (time,width,height,pad)
+        let globals_val = self.builder.load(self.builtins.globals_block, None, self.builtins.globals_ptr, None, vec![]).unwrap();
+        let data_vec = self.builder.composite_extract(self.types.vec4_ty, None, globals_val, vec![0]).unwrap();
+        self.builder.composite_extract(self.types.f32_ty, None, data_vec, vec![0]).unwrap()
+    }
+
+    pub fn clamp_vec4(&mut self, v: Word) -> Word {
+        use rspirv::dr::Operand;
+        // Clamp each component 0..1 using FMax then FMin
+        let zero = self.emit_f32_constant(0.0);
+        let one = self.emit_f32_constant(1.0);
+        let r = self.extract_component(v,0); let g = self.extract_component(v,1); let b = self.extract_component(v,2); let a = self.extract_component(v,3);
+        let clamp_comp = |ctx: &mut SpirvContext, c: Word| {
+            let maxv = ctx.builder.ext_inst(ctx.types.f32_ty, None, ctx.glsl_ext, 42, vec![Operand::IdRef(c), Operand::IdRef(zero)]).unwrap();
+            ctx.builder.ext_inst(ctx.types.f32_ty, None, ctx.glsl_ext, 39, vec![Operand::IdRef(maxv), Operand::IdRef(one)]).unwrap()
+        };
+        let r2 = clamp_comp(self,r); let g2 = clamp_comp(self,g); let b2 = clamp_comp(self,b);
+        self.construct_vec4(r2,g2,b2,a)
     }
 
     pub fn emit_vec2(&mut self, x: Word, y: Word) -> Word {
@@ -175,5 +186,45 @@ impl SpirvContext {
         // fract(x) = x - floor(x)
         let flo = self.emit_glsl_floor(x);
         self.builder.f_sub(self.types.f32_ty, None, x, flo).unwrap()
+    }
+
+    pub fn emit_glsl_atan2(&mut self, y: Word, x: Word) -> Word {
+        use rspirv::dr::Operand;
+        // GLSL.std.450 Atan2 opcode 25
+        self.builder.ext_inst(
+            self.types.f32_ty,
+            None,
+            self.glsl_ext,
+            25,
+            vec![Operand::IdRef(y), Operand::IdRef(x)],
+        ).unwrap()
+    }
+
+    pub fn emit_mod_scalar(&mut self, x: Word, y: Word) -> Word {
+        // x - y * floor(x / y)
+        let div = self.builder.f_div(self.types.f32_ty, None, x, y).unwrap();
+        let flo = self.emit_glsl_floor(div);
+        let mul = self.builder.f_mul(self.types.f32_ty, None, flo, y).unwrap();
+        self.builder.f_sub(self.types.f32_ty, None, x, mul).unwrap()
+    }
+
+    pub fn emit_glsl_pow(&mut self, x: Word, y: Word) -> Word {
+        // Pow opcode 26 (based on existing opcode sequence used)
+        self.builder.ext_inst(
+            self.types.f32_ty,
+            None,
+            self.glsl_ext,
+            26,
+            vec![Operand::IdRef(x), Operand::IdRef(y)],
+        ).unwrap()
+    }
+
+    pub fn safe_pow(&mut self, x: Word, y: Word) -> Word {
+        use rspirv::dr::Operand;
+        let zero = self.emit_f32_constant(0.0);
+        let one = self.emit_f32_constant(1.0);
+        let maxv = self.builder.ext_inst(self.types.f32_ty, None, self.glsl_ext, 42, vec![Operand::IdRef(x), Operand::IdRef(zero)]).unwrap(); // FMax
+        let clamped = self.builder.ext_inst(self.types.f32_ty, None, self.glsl_ext, 39, vec![Operand::IdRef(maxv), Operand::IdRef(one)]).unwrap(); // FMin
+        self.emit_glsl_pow(clamped, y)
     }
 }

@@ -17,9 +17,8 @@ struct State {
     surface: wgpu::Surface<'static>,
     surface_format: wgpu::TextureFormat,
     render_pipeline: wgpu::RenderPipeline,
-    // Uniform resources
-    time_buffer: wgpu::Buffer,
-    resolution_buffer: wgpu::Buffer,
+    // Combined globals uniform buffer: vec4(time, width, height, pad)
+    globals_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     start_instant: Instant,
 }
@@ -76,24 +75,16 @@ impl State {
             },
         });
 
-        // Create uniform buffers for time (binding=0) and resolution (binding=1)
-        // Allocate 16 bytes for each to satisfy common alignment constraints.
-        let time_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("time uniform buffer"),
+        // Create single globals uniform buffer (16 bytes for vec4)
+        let globals_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("globals uniform buffer"),
             size: 16,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let resolution_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("resolution uniform buffer"),
-            size: 16,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        // Initialize resolution contents
-        let initial_resolution: [f32; 4] = [size.width as f32, size.height as f32, 0.0, 0.0];
-        queue.write_buffer(&resolution_buffer, 0, bytemuck::cast_slice(&initial_resolution));
+        // Initialize (time=0)
+        let initial_globals: [f32; 4] = [0.0, size.width as f32, size.height as f32, 0.0];
+        queue.write_buffer(&globals_buffer, 0, bytemuck::cast_slice(&initial_globals));
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("globals bind group layout"),
@@ -107,17 +98,7 @@ impl State {
                         min_binding_size: None,
                     },
                     count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
+                }
             ],
         });
 
@@ -125,14 +106,7 @@ impl State {
             label: Some("globals bind group"),
             layout: &bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: time_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: resolution_buffer.as_entire_binding(),
-                },
+                wgpu::BindGroupEntry { binding: 0, resource: globals_buffer.as_entire_binding() }
             ],
         });
 
@@ -180,8 +154,7 @@ impl State {
             surface,
             surface_format,
             render_pipeline,
-            time_buffer,
-            resolution_buffer,
+            globals_buffer,
             bind_group,
             start_instant: Instant::now(),
         };
@@ -213,14 +186,8 @@ impl State {
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         self.size = new_size;
-
-        // reconfigure the surface
         self.configure_surface();
-
-        // Update resolution uniform
-        let new_resolution: [f32; 4] = [self.size.width as f32, self.size.height as f32, 0.0, 0.0];
-        self.queue
-            .write_buffer(&self.resolution_buffer, 0, bytemuck::cast_slice(&new_resolution));
+        // No immediate buffer write; will update globals in next render()
     }
 
     fn render(&mut self) {
@@ -236,11 +203,10 @@ impl State {
                 ..Default::default()
             });
 
-        // Update time uniform (seconds since start)
+        // Update globals uniform (time, width, height, pad)
         let elapsed = self.start_instant.elapsed().as_secs_f32();
-        let time_data: [f32; 4] = [elapsed, 0.0, 0.0, 0.0];
-        self.queue
-            .write_buffer(&self.time_buffer, 0, bytemuck::cast_slice(&time_data));
+        let globals: [f32; 4] = [elapsed, self.size.width as f32, self.size.height as f32, 0.0];
+        self.queue.write_buffer(&self.globals_buffer, 0, bytemuck::cast_slice(&globals));
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
