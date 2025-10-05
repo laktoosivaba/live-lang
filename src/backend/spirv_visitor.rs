@@ -217,6 +217,7 @@ impl SpirvEmitter {
             "rotate" => self.emit_rotate(input, call),
             "scale" => self.emit_scale(input, call),
             "invert" => self.emit_invert(input, call),
+            "color" => self.emit_color(input, call),
             _ => Some(input), // Unknown function, pass through
         }
     }
@@ -299,6 +300,28 @@ impl SpirvEmitter {
         let final_b = self.mix(b, inv_b, amount);
 
         Some(self.builder.composite_construct(self.vec4_ty, None, vec![final_r, final_g, final_b, a]).unwrap())
+    }
+
+    fn emit_color(&mut self, input: Word, call: &CallExpr) -> Option<Word> {
+        // color(r=1, g=1, b=1, a=1) - multiplies input color by specified color
+        let r = self.get_arg_or_default(call, 0, 1.0);
+        let g = self.get_arg_or_default(call, 1, 1.0);
+        let b = self.get_arg_or_default(call, 2, 1.0);
+        let a = self.get_arg_or_default(call, 3, 1.0);
+
+        // Extract input RGBA components
+        let input_r = self.builder.composite_extract(self.f32_ty, None, input, vec![0]).unwrap();
+        let input_g = self.builder.composite_extract(self.f32_ty, None, input, vec![1]).unwrap();
+        let input_b = self.builder.composite_extract(self.f32_ty, None, input, vec![2]).unwrap();
+        let input_a = self.builder.composite_extract(self.f32_ty, None, input, vec![3]).unwrap();
+
+        // Multiply each component
+        let final_r = self.builder.f_mul(self.f32_ty, None, input_r, r).unwrap();
+        let final_g = self.builder.f_mul(self.f32_ty, None, input_g, g).unwrap();
+        let final_b = self.builder.f_mul(self.f32_ty, None, input_b, b).unwrap();
+        let final_a = self.builder.f_mul(self.f32_ty, None, input_a, a).unwrap();
+
+        Some(self.builder.composite_construct(self.vec4_ty, None, vec![final_r, final_g, final_b, final_a]).unwrap())
     }
 
     // Helper functions
