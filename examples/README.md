@@ -6,7 +6,7 @@ A complete example demonstrating the full pipeline from Hydra.js live coding syn
 
 ### Inputs
 - `hydra/color.js` - Input Hydra code in JavaScript syntax
-- `glsl/triangle.vert` - Pre-made GLSL vertex shader (for reference), just a triangle
+- `glsl/screen.vert` - Pre-made GLSL vertex shader (for reference), just use entire screen
 
 ### What it does
 

@@ -1,3 +1,4 @@
+use std::fs;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -44,8 +45,14 @@ impl State {
         let vertex_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("vertex"),
             source: wgpu::ShaderSource::Glsl {
-                // shader: std::borrow::Cow::Borrowed(include_str!("glsl/triangle.vert")),
-                shader: std::borrow::Cow::Borrowed(include_str!("../glsl/triangle.vert")),
+                // Load vertex shader source at runtime instead of embedding.
+                shader: std::borrow::Cow::Owned(
+                    fs::read_to_string(format!(
+                        "{}/examples/glsl/screen.vert",
+                        env!("CARGO_MANIFEST_DIR")
+                    ))
+                    .expect("Failed to read vertex shader (examples/glsl/screen.vert)"),
+                ),
                 stage: wgpu::naga::ShaderStage::Vertex,
                 defines: &[],
             },
@@ -56,8 +63,14 @@ impl State {
         let fragment_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("fragment"),
             source: wgpu::ShaderSource::Glsl {
-                // shader: std::borrow::Cow::Borrowed(include_str!("glsl/pink.frag")),
-                shader: std::borrow::Cow::Borrowed(include_str!("../glsl/fragment.frag")),
+                // Load fragment shader source at runtime instead of embedding.
+                shader: std::borrow::Cow::Owned(
+                    fs::read_to_string(format!(
+                        "{}/examples/glsl/fragment.frag",
+                        env!("CARGO_MANIFEST_DIR")
+                    ))
+                    .expect("Failed to read fragment shader (examples/glsl/fragment.frag)"),
+                ),
                 stage: wgpu::naga::ShaderStage::Fragment,
                 defines: &[],
             },
@@ -149,7 +162,8 @@ impl State {
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                cull_mode: None,
                 ..Default::default()
             },
             depth_stencil: None,
@@ -247,7 +261,7 @@ impl State {
 
             renderpass.set_pipeline(&self.render_pipeline);
             renderpass.set_bind_group(0, &self.bind_group, &[]);
-            renderpass.draw(0..3, 0..1);
+            renderpass.draw(0..4, 0..1);
         }
 
         self.queue.submit([encoder.finish()]);
